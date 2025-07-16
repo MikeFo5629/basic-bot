@@ -1,0 +1,71 @@
+import datetime
+import pandas as pd
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest
+from alpaca.data.timeframe import TimeFrame
+
+# Alpaca Paper API keys
+API_KEY = "PKTC703LL8BWWGFO5RB4"
+SECRET_KEY = "hscjDqGIteD48muUUgdGf59vQvAv0dCJdejzce0H"
+
+# Initialize Alpaca client
+client = StockHistoricalDataClient(API_KEY, SECRET_KEY)
+
+# Parameters
+symbol = "TSLA"
+start_date = datetime.datetime.now() - datetime.timedelta(days=7)
+initial_cash = 10.00  # Try with $10, or $1000 to compare
+short_window = 5
+long_window = 20
+
+# Request 1-minute bar data
+request = StockBarsRequest(
+    symbol_or_symbols=symbol,
+    timeframe=TimeFrame.Minute,
+    start=start_date
+)
+
+bars = client.get_stock_bars(request).df
+bars = bars[bars.index.get_level_values("symbol") == symbol]
+
+# Calculate moving averages
+bars['short_ma'] = bars['close'].rolling(window=short_window).mean()
+bars['long_ma'] = bars['close'].rolling(window=long_window).mean()
+
+# Backtest logic
+position = 0      # 0 = out, 1 = in
+cash = initial_cash
+shares = 0.0
+entry_price = 0.0
+
+trade_log = []
+
+for i in range(long_window, len(bars)):
+    row = bars.iloc[i]
+    prev_row = bars.iloc[i - 1]
+
+    if row['short_ma'] > row['long_ma'] and prev_row['short_ma'] <= prev_row['long_ma']:
+        # Buy
+        if position == 0:
+            shares = round(cash / row['close'], 6)
+            cash -= shares * row['close']
+            entry_price = row['close']
+            position = 1
+            trade_log.append(f"BUY at {row.name} | Price: ${row['close']:.2f} | Shares: {shares:.6f}")
+
+    elif row['short_ma'] < row['long_ma'] and prev_row['short_ma'] >= prev_row['long_ma']:
+        # Sell
+        if position == 1:
+            cash += shares * row['close']
+            trade_log.append(f"SELL at {row.name} | Price: ${row['close']:.2f} | Shares: {shares:.6f}")
+            shares = 0.0
+            position = 0
+
+# Final value and P&L
+final_value = cash + (shares * bars.iloc[-1]['close'])
+profit = final_value - initial_cash
+trade_log.append(f"FINAL VALUE: ${final_value:.2f} | PROFIT: ${profit:.2f}")
+
+# Print trade log
+for log in trade_log:
+    print(log)
