@@ -1,0 +1,1 @@
+Basic stock trading algo
